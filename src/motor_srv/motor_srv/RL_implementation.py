@@ -82,8 +82,8 @@ class MotorSRVNode(Node):
 
         # Load the policy model and configuration file
         self.policy = self.load_policy(
-            "src/mingsong_turtle_try/src/motor_srv/models/height_700.pt",
-            obs_dim=34,  # Observation dimension (34 for height changable model, 33 for height non-changable model.)
+            "src/mingsong_turtle_try/src/motor_srv/models/model_700_01m.pt",
+            obs_dim=33,  # Observation dimension (34 for height changable model, 33 for height non-changable model.)
             action_dim=8,  # Action dimension
             actor_hidden_dims=[512, 256, 128],
             critic_hidden_dims=[512, 256, 128],
@@ -91,7 +91,7 @@ class MotorSRVNode(Node):
         )
 
         self.default_dof_pos = torch.tensor(
-            [1.3, -1.3, 1.3, -1.3, 0.15, -0.15, 0.15, -0.15], dtype=torch.float32
+            [1.5, -1.3, 1.3, -1.5, 0.15, -0.15, 0.15, -0.15], dtype=torch.float32
         ).to(self.device)
 
         self.create_timer(0.1, self.compute_and_publish)
@@ -258,7 +258,7 @@ class MotorSRVNode(Node):
     def command_callback(self, msg):
     # Ensure we extract all four values correctly
         self.commands = torch.tensor(
-            [msg.linear.x*2, msg.linear.y*2, msg.linear.z, msg.angular.z],  # Added msg.angular.z
+            [msg.linear.x*2, msg.linear.y*2, msg.linear.z],  # Added msg.angular.z
             dtype=torch.float32,
             device=self.device
         )
@@ -284,7 +284,7 @@ class MotorSRVNode(Node):
 
                 raw_positions.append(position)
                 raw_velocities.append(-speed)
-                # print(raw_positions)
+                print(raw_positions)
                 # print(raw_velocities)
             # Convert positions to radians
             new_dof_pos = torch.tensor([self.encoder_to_rad(pos) for pos in raw_positions], device=self.device)

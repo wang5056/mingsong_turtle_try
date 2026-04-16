@@ -26,10 +26,9 @@ class DynamixelControlNode(Node):
         # Default positions
         self.goal_positions = [1205,2890,1205,2890,1956,2147,1956,2147,2048,2048,2048,2048]
         self.target_positions = [1205,2890,1205,2890,1956,2147,1956,2147,2048,2048,2048,2048]
+        # self.goal_positions = [2503,1934,2162,1593,2674,3072,1024,1422,2192,1024,3072,1934]
+        # self.target_positions = [2503,1934,2162,1593,2674,3072,1024,1422,2192,1024,3072,1934]
 
-        # Default positions
-        # self.goal_positions = [2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048]
-        # self.target_positions = [2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048]
         self.motor_commands_available = False
         self.ready_to_move = True
 
@@ -151,12 +150,19 @@ class DynamixelControlNode(Node):
                 self.goal_positions = [int(pos) for pos in msg.data]
 
     def motor_commands_callback(self, msg):
-        if len(msg.data) == 8:
+        if len(msg.data) == 12:
+            self.motor_commands_available = True
+            self.target_positions = [int(pos) for pos in msg.data]
+            self.get_logger().info(f"Received 12 motor commands: {msg.data}")
+        elif len(msg.data) == 8:
             self.motor_commands_available = True
             for i, motor_index in enumerate([0, 1, 2, 3, 4, 5, 6, 7]):
                 self.target_positions[motor_index] = int(msg.data[i])
             for motor_index in [8, 9, 10, 11]:
                 self.target_positions[motor_index] = 2048
+            self.get_logger().info(f"Received 8 motor commands, padding [8, 9, 10, 11] with 2048: {msg.data}")
+        else:
+            self.get_logger().warn(f"Invalid motor commands length: {len(msg.data)}, expected 8 or 12")
 
     def convert_to_signed(self, value, bit_length=32):
         if value >= (1 << (bit_length - 1)):
@@ -168,8 +174,8 @@ class DynamixelControlNode(Node):
         raw_positions = self.target_positions if self.motor_commands_available else self.goal_positions
         motor_mapping = {
             0: raw_positions[0],  1: raw_positions[1],  2: raw_positions[2],  3: raw_positions[3],
-            4: raw_positions[4],  5: raw_positions[5],  6: raw_positions[6], 7: raw_positions[7],
-            8: 2048, 9: 2048, 10: 2048, 11: 2048
+            4: raw_positions[4],  5: raw_positions[5],  6: raw_positions[6],  7: raw_positions[7],
+            8: raw_positions[8],  9: raw_positions[9],  10: raw_positions[10], 11: raw_positions[11]
         }
 
         # Send goal positions
@@ -206,7 +212,7 @@ class DynamixelControlNode(Node):
         current_data = []
         for dxl_id in self.DXL_IDS:
             curr = self.current_read.getData(dxl_id, X_Series["ADDR_PRESENT_CURRENT"], 2)
-            curr = self.convert_to_signed(curr, 16)  # Current is 16-bit signed
+            curr = self.convert_to_signed(curr, 16)
             current_data.extend([float(dxl_id), float(curr)])
         current_msg.data = current_data
         self.current_publisher.publish(current_msg)

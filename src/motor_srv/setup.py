@@ -44,7 +44,9 @@ setup(
             'RL_new = motor_srv.RL_new:main',
             'jue_arduino_node = motor_srv.jue_arduino_node:main',
             'robot_motion_tracker = motor_srv.robot_motion_tracker:main',
-            'COT_jue = motor_srv.COT_jue:main'
+            'COT_jue = motor_srv.COT_jue:main',
+            'esteban_arduino_node = motor_srv.esteban_arduino_node:main',
+            'RL_pre_gait = motor_srv.RL_pre_gait:main'
         ],
     },
 )

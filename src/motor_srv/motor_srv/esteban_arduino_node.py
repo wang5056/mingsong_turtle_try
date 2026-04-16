@@ -7,7 +7,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPo
 
 class ArduinoSerialNode(Node):
     def __init__(self):
-        super().__init__('jue_arduino_node')
+        super().__init__('esteban_arduino_node')
 
         sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -17,14 +17,18 @@ class ArduinoSerialNode(Node):
         )
 
         # Serial parameters
-        self.serial_port = '/dev/ttyUSB0'  # Adjust based on your system (e.g., '/dev/ttyUSB0' or 'COM3' on Windows)
+        self.serial_port = '/dev/ttyUSB1'  # Adjust based on your system (e.g., '/dev/ttyUSB0' or 'COM3' on Windows)
         self.baud_rate = 115200
 
         # Publishers for all sensor data
-        self.height_pub = self.create_publisher(Float32, 'arduino/height', sensor_qos)
-        self.pressure_pub = self.create_publisher(Float32, 'arduino/pressure', sensor_qos)
+        self.mv_pub = self.create_publisher(Float32, 'arduino/mv', sensor_qos)
+        self.mw_pub = self.create_publisher(Float32, 'arduino/mw', sensor_qos)
         self.latitude_pub = self.create_publisher(Float32, 'arduino/latitude', sensor_qos)
         self.longitude_pub = self.create_publisher(Float32, 'arduino/longitude', sensor_qos)
+        self.altitude_pub = self.create_publisher(Float32, 'arduino/altitude', sensor_qos)
+        self.height_pub = self.create_publisher(Float32, 'arduino/height', sensor_qos)
+        self.p_pos_psi_pub = self.create_publisher(Float32, 'arduino/p_pos_psi', sensor_qos)
+        self.p_neg_psi_pub = self.create_publisher(Float32, 'arduino/p_neg_psi', sensor_qos)
 
         # Subscriber for sending commands to Arduino
         self.command_sub = self.create_subscription(
@@ -48,49 +52,77 @@ class ArduinoSerialNode(Node):
         while rclpy.ok():
             try:
                 line = self.serial_conn.readline().decode('utf-8').strip()
+                self.get_logger().info(f"Raw data from Arduino: {line}")
                 # Check for initialization or status messages
-                if any(x in line for x in ["Starting", "GNSS OK", "VL53L4CD OK", "Setup complete", "Inflating", "Deflating", "stopped"]):
+                if any(x in line for x in ["Starting", "GNSS OK", "VL53L4CD OK", "Setup complete", 
+                                          "Inflating", "Deflating", "Jamming", "Unjamming", 
+                                          "Floating", "Sinking", "stopped", "Running", 
+                                          "LED ON", "LED OFF", "VL53 init attempt", 
+                                          "VL53L4CD not detected", "INA260 found", 
+                                          "INA260 not detected", "GPS connected", 
+                                          "GPS not detected"]):
                     self.get_logger().info(f"Arduino status: {line}")
                     continue
 
                 # Parse sensor data
-                if line.startswith("Height:"):
-                    # Split into height, pressure, and GPS sections
-                    sections = line.split("; ")
-                    if len(sections) != 3:
+                if line.startswith("mV:"):
+                    # Split into sections
+                    sections = line.split(", ")
+                    if len(sections) != 8:
                         self.get_logger().warn(f"Invalid data format: {line}")
                         continue
 
-                    # Parse height, pressure, and GPS data
-                    height_data = sections[0].replace("Height: ", "")
-                    pressure_data = sections[1].replace("Pressure: ", "")
-                    gps_data = sections[2].replace("GPS: Lat: ", "").split(", Lon: ")
-
-                    if len(gps_data) != 2:
-                        self.get_logger().warn(f"Malformed GPS data: {line}")
-                        continue
-
+                    # Parse each section
                     try:
-                        # Extract and convert height from mm to m
-                        height_mm = float(height_data)
+                        # mV
+                        mv_str = sections[0].split(": ")[1]
+                        mv = float(mv_str) if mv_str != 'ovf' else float('nan')  # Handle 'ovf' as NaN
+
+                        # mW
+                        mw_str = sections[1].split(": ")[1]
+                        mw = float(mw_str) if mw_str != 'ovf' else float('nan')  # Handle 'ovf' as NaN
+
+                        # Lat
+                        lat_str = sections[2].split(": ")[1]
+                        latitude = float(lat_str)
+
+                        # Lon
+                        lon_str = sections[3].split(": ")[1]
+                        longitude = float(lon_str)
+
+                        # Alt (strip 'm')
+                        alt_str = sections[4].split(": ")[1].rstrip('m')
+                        altitude = float(alt_str)
+
+                        # Height (strip 'mm' and convert to m)
+                        height_str = sections[5].split(": ")[1].rstrip('mm')
+                        height_mm = float(height_str)
                         height = height_mm / 1000.0  # Convert mm to m
-                        pressure = float(pressure_data)
 
-                        self.height_pub.publish(Float32(data=height))
-                        self.pressure_pub.publish(Float32(data=pressure))
+                        # P_pos_psi (strip 'psi')
+                        p_pos_psi_str = sections[6].split(": ")[1].rstrip('psi')
+                        p_pos_psi = float(p_pos_psi_str)
 
-                        # Extract and publish GPS data
-                        latitude = float(gps_data[0])
-                        longitude = float(gps_data[1])
+                        # P_neg_psi (strip 'psi')
+                        p_neg_psi_str = sections[7].split(": ")[1].rstrip('psi')
+                        p_neg_psi = float(p_neg_psi_str)
 
+                        # Publish
+                        self.mv_pub.publish(Float32(data=mv))
+                        self.mw_pub.publish(Float32(data=mw))
                         self.latitude_pub.publish(Float32(data=latitude))
                         self.longitude_pub.publish(Float32(data=longitude))
+                        self.altitude_pub.publish(Float32(data=altitude))
+                        self.height_pub.publish(Float32(data=height))
+                        self.p_pos_psi_pub.publish(Float32(data=p_pos_psi))
+                        self.p_neg_psi_pub.publish(Float32(data=p_neg_psi))
 
                         self.get_logger().info(
-                            f"Published: Height={height} m, Pressure={pressure}, "
-                            f"Lat={latitude}, Lon={longitude}"
+                            f"Published: mV={mv}, mW={mw}, "
+                            f"Lat={latitude}, Lon={longitude}, Alt={altitude} m, Height={height} m, "
+                            f"P_pos_psi={p_pos_psi} psi, P_neg_psi={p_neg_psi} psi"
                         )
-                    except ValueError as e:
+                    except (ValueError, IndexError) as e:
                         self.get_logger().warn(f"Failed to parse data: {line}, Error: {e}")
             except serial.SerialException as e:
                 self.get_logger().error(f"Serial error: {e}")
@@ -103,14 +135,14 @@ class ArduinoSerialNode(Node):
         """ Listen to ROS2 topic and send commands to Arduino """
         command = msg.data.strip()
         
-        # Split the command into parts (e.g., 'i,5' -> ['i', '5'])
+        # Split the command into parts (e.g., 'u,6' -> ['u', '6'])
         parts = command.split(',')
         
         # Check for valid commands
-        if len(parts) == 1 and parts[0] in ['i', 'k']:  # Original single-letter commands
+        if len(parts) == 1 and parts[0] == 'b':  # 'b' command has no number
             self.serial_conn.write((command + "\n").encode('utf-8'))
             self.get_logger().info(f"Sent command to Arduino: {command}")
-        elif len(parts) == 2 and parts[0] in ['i', 'k']:  # New commands with numbers (e.g., 'i,5' or 'k,6')
+        elif len(parts) == 2 and parts[0] in ['i', 'd', 'j', 'u', 'f', 's']:  # Commands with number
             try:
                 # Ensure the second part is a valid number
                 number = int(parts[1])  # Convert to integer to validate
